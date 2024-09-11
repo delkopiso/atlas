@@ -7,12 +7,8 @@ package sqlparse
 import (
 	"sync"
 
-	"ariga.io/atlas/cmd/atlas/internal/sqlparse/myparse"
-	"ariga.io/atlas/cmd/atlas/internal/sqlparse/pgparse"
 	"ariga.io/atlas/cmd/atlas/internal/sqlparse/sqliteparse"
 	"ariga.io/atlas/sql/migrate"
-	"ariga.io/atlas/sql/mysql"
-	"ariga.io/atlas/sql/postgres"
 	"ariga.io/atlas/sql/schema"
 	"ariga.io/atlas/sql/sqlite"
 )
@@ -57,7 +53,5 @@ func ParserFor(name string) Parser {
 }
 
 func init() {
-	Register(mysql.DriverName, &myparse.FileParser{})
-	Register(postgres.DriverName, &pgparse.Parser{})
 	Register(sqlite.DriverName, &sqliteparse.FileParser{})
 }
