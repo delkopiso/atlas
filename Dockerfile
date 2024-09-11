@@ -13,9 +13,9 @@ RUN go generate ./...
 ENV CGO_ENABLED=0
 ENV GOOS=linux
 ENV GOARCH=amd64
-RUN go build -trimpath -ldflags "-extldflags '-static' -s -w" -o /app/bin/atlas .
+RUN go build -trimpath -ldflags "-extldflags '-static' -s -w -X ariga.io/atlas/cmd/atlas/internal/cmdapi.flavor=custom-build" -o /app/bin/atlas .
 RUN chmod +x /app/bin/atlas
 
 
-FROM scratch
+FROM alpine
 COPY --from=build /app/bin/atlas /atlas
