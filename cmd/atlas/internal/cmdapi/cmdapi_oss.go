@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"ariga.io/atlas/cmd/atlas/internal/cloudapi"
-	"ariga.io/atlas/cmd/atlas/internal/cmdext"
 	"ariga.io/atlas/cmd/atlas/internal/cmdlog"
 	"ariga.io/atlas/cmd/atlas/internal/cmdstate"
 	cmdmigrate "ariga.io/atlas/cmd/atlas/internal/migrate"
@@ -105,11 +104,10 @@ Or, visit the website to see all installation options:
 type (
 	// Project represents an atlas.hcl project config file.
 	Project struct {
-		Envs  []*Env `spec:"env"`  // List of environments
-		Lint  *Lint  `spec:"lint"` // Optional global lint policy
-		Diff  *Diff  `spec:"diff"` // Optional global diff policy
-		Test  *Test  `spec:"test"` // Optional test configuration
-		cloud *cmdext.AtlasConfig
+		Envs []*Env `spec:"env"`  // List of environments
+		Lint *Lint  `spec:"lint"` // Optional global lint policy
+		Diff *Diff  `spec:"diff"` // Optional global diff policy
+		Test *Test  `spec:"test"` // Optional test configuration
 	}
 )
 
@@ -252,19 +250,6 @@ func migrateDiffRun(cmd *cobra.Command, args []string, flags migrateDiffFlags, e
 		return err
 	}
 	diffOpts := append(diffOptions(cmd, env), schema.DiffNormalized())
-	// If there is a state-loader that requires a custom
-	// 'migrate diff' handling, offload it the work.
-	if d, ok := cmdext.States.Differ(flags.desiredURLs); ok {
-		err := d.MigrateDiff(ctx, &cmdext.MigrateDiffOptions{
-			To:      flags.desiredURLs,
-			Name:    name,
-			Indent:  indent,
-			Dir:     dir,
-			Dev:     dev,
-			Options: diffOpts,
-		})
-		return maskNoPlan(cmd, err)
-	}
 	// Get a state reader for the desired state.
 	desired, err := stateReader(ctx, env, &stateReaderConfig{
 		urls:    flags.desiredURLs,

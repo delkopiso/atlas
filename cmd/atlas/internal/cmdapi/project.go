@@ -15,7 +15,6 @@ import (
 	"sync"
 
 	"ariga.io/atlas/cmd/atlas/internal/cloudapi"
-	"ariga.io/atlas/cmd/atlas/internal/cmdext"
 	cmdmigrate "ariga.io/atlas/cmd/atlas/internal/migrate"
 	"ariga.io/atlas/schemahcl"
 	"ariga.io/atlas/sql/schema"
@@ -67,7 +66,6 @@ type (
 		Test *Test `spec:"test"`
 
 		schemahcl.DefaultExtension
-		cloud  *cmdext.AtlasConfig
 		config *Project
 	}
 
@@ -550,13 +548,6 @@ func EnvByName(cmd *cobra.Command, name string, vars map[string]cty.Value) (*Pro
 // maySetTokenContext sets the token context and cloud client if
 // defined in the project file.
 func maySetTokenContext(cmd *cobra.Command, p *Project) error {
-	if p.cloud.Token != "" && p.cloud.Client != nil {
-		ctx, err := withTokenContext(cmd.Context(), p.cloud.Token, p.cloud.Client)
-		if err != nil {
-			return err
-		}
-		cmd.SetContext(ctx)
-	}
 	return nil
 }
 
@@ -604,13 +595,9 @@ func parseConfig(ctx context.Context, path, env string, vars map[string]cty.Valu
 	if err != nil {
 		return nil, err
 	}
-	cloud := &cmdext.AtlasConfig{
-		Project: cloudapi.DefaultProjectName,
-	}
 	state := schemahcl.New(
 		append(
-			append(cmdext.SpecOptions, specOptions...),
-			cloud.InitBlock(),
+			specOptions,
 			schemahcl.WithContext(ctx),
 			schemahcl.WithScopedEnums("env.migration.format", cmdmigrate.Formats...),
 			schemahcl.WithScopedEnums("env.migration.exec_order", "LINEAR", "LINEAR_SKIP", "NON_LINEAR"),
@@ -628,12 +615,12 @@ func parseConfig(ctx context.Context, path, env string, vars map[string]cty.Valu
 			}),
 		)...,
 	)
-	p := &Project{Lint: &Lint{}, Diff: &Diff{}, cloud: cloud}
+	p := &Project{Lint: &Lint{}, Diff: &Diff{}}
 	if err := state.Eval(pr, p, vars); err != nil {
 		return nil, err
 	}
 	for _, e := range p.Envs {
-		e.config, e.cloud = p, cloud
+		e.config = p
 	}
 	return p, nil
 }

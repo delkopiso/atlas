@@ -315,9 +315,6 @@ type (
 // NewReportProvider returns a new ReporterProvider.
 func NewReportProvider(ctx context.Context, p *Project, envs []*Env, flags *migrateApplyFlags) (*MigrateReportSet, error) {
 	c := cloudapi.FromContext(ctx)
-	if p.cloud.Client != nil {
-		c = p.cloud.Client
-	}
 	s := &MigrateReportSet{
 		client: c,
 		ReportMigrationSetInput: cloudapi.ReportMigrationSetInput{
@@ -495,7 +492,6 @@ func (r *MigrateReport) Done(cmd *cobra.Command, flags migrateApplyFlags) error 
 		dirName = path.Join(u.Host, u.Path)
 	}
 	r.done(&cloudapi.ReportMigrationInput{
-		ProjectName:  r.env.config.cloud.Project,
 		EnvName:      r.env.Name,
 		DirName:      dirName,
 		AtlasVersion: operatorVersion(),
@@ -555,12 +551,7 @@ func (r *MigrateReport) Done(cmd *cobra.Command, flags migrateApplyFlags) error 
 
 // CloudEnabled reports if cloud reporting is enabled.
 func (r *MigrateReport) CloudEnabled(ctx context.Context) bool {
-	if r.env == nil || r.env.cloud == nil {
-		return false // The --env was not set.
-	}
-	cloud := r.env.cloud
-	// Cloud reporting is enabled only if there is a cloud connection.
-	return cloud.Project != "" && (cloud.Client != nil || cloudapi.FromContext(ctx) != nil)
+	return false
 }
 
 func logApply(cmd *cobra.Command, w io.Writer, flags migrateApplyFlags, r *cmdlog.MigrateApply) error {

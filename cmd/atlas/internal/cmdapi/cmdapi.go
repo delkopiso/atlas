@@ -522,7 +522,7 @@ func readerUseDev(env *Env, urls ...string) (bool, error) {
 	case s == cmdext.SchemaTypeFile, s == cmdext.SchemaTypeAtlas:
 		return true, nil
 	default:
-		return cmdext.States.HasLoader(s), nil
+		return false, nil
 	}
 }
 
@@ -549,9 +549,6 @@ func stateReader(ctx context.Context, env *Env, config *stateReaderConfig) (*cmd
 		default:
 			panic("unreachable") // checked by filesExt.
 		}
-	// "atlas" scheme represents an Atlas Cloud schema.
-	case cmdext.SchemaTypeAtlas:
-		return cmdext.StateReaderAtlas(ctx, excfg)
 	// "env" scheme represents an attribute defined
 	// on the selected environment.
 	case envAttrScheme:
@@ -570,14 +567,6 @@ func stateReader(ctx context.Context, env *Env, config *stateReaderConfig) (*cmd
 			return stateReader(ctx, env, &cfg)
 		}
 	default:
-		// In case there is an external state-loader registered with this scheme.
-		if l, ok := cmdext.States.Loader(scheme); ok {
-			rc, err := l.LoadState(ctx, excfg)
-			if err != nil {
-				return nil, err
-			}
-			return rc, nil
-		}
 		// All other schemes are database (or docker) connections.
 		c, err := env.openClient(ctx, config.urls[0]) // call to selectScheme already checks for len > 0
 		if err != nil {
