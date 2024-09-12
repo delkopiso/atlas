@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ariga.io/atlas/cmd/atlas/internal/migrate/ent/predicate"
+	"ariga.io/atlas/cmd/atlas/internal/migrate/ent/schema"
 	"ariga.io/atlas/sql/migrate"
 	"entgo.io/ent/dialect/sql"
 )
@@ -91,8 +92,9 @@ func Total(v int) predicate.Revision {
 }
 
 // ExecutedAt applies equality check predicate on the "executed_at" field. It's identical to ExecutedAtEQ.
-func ExecutedAt(v time.Time) predicate.Revision {
-	return predicate.Revision(sql.FieldEQ(FieldExecutedAt, v))
+func ExecutedAt(v schema.Unix) predicate.Revision {
+	vc := int64(v)
+	return predicate.Revision(sql.FieldEQ(FieldExecutedAt, vc))
 }
 
 // ExecutionTime applies equality check predicate on the "execution_time" field. It's identical to ExecutionTimeEQ.
@@ -321,43 +323,57 @@ func TotalLTE(v int) predicate.Revision {
 }
 
 // ExecutedAtEQ applies the EQ predicate on the "executed_at" field.
-func ExecutedAtEQ(v time.Time) predicate.Revision {
-	return predicate.Revision(sql.FieldEQ(FieldExecutedAt, v))
+func ExecutedAtEQ(v schema.Unix) predicate.Revision {
+	vc := int64(v)
+	return predicate.Revision(sql.FieldEQ(FieldExecutedAt, vc))
 }
 
 // ExecutedAtNEQ applies the NEQ predicate on the "executed_at" field.
-func ExecutedAtNEQ(v time.Time) predicate.Revision {
-	return predicate.Revision(sql.FieldNEQ(FieldExecutedAt, v))
+func ExecutedAtNEQ(v schema.Unix) predicate.Revision {
+	vc := int64(v)
+	return predicate.Revision(sql.FieldNEQ(FieldExecutedAt, vc))
 }
 
 // ExecutedAtIn applies the In predicate on the "executed_at" field.
-func ExecutedAtIn(vs ...time.Time) predicate.Revision {
-	return predicate.Revision(sql.FieldIn(FieldExecutedAt, vs...))
+func ExecutedAtIn(vs ...schema.Unix) predicate.Revision {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = int64(vs[i])
+	}
+	return predicate.Revision(sql.FieldIn(FieldExecutedAt, v...))
 }
 
 // ExecutedAtNotIn applies the NotIn predicate on the "executed_at" field.
-func ExecutedAtNotIn(vs ...time.Time) predicate.Revision {
-	return predicate.Revision(sql.FieldNotIn(FieldExecutedAt, vs...))
+func ExecutedAtNotIn(vs ...schema.Unix) predicate.Revision {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = int64(vs[i])
+	}
+	return predicate.Revision(sql.FieldNotIn(FieldExecutedAt, v...))
 }
 
 // ExecutedAtGT applies the GT predicate on the "executed_at" field.
-func ExecutedAtGT(v time.Time) predicate.Revision {
-	return predicate.Revision(sql.FieldGT(FieldExecutedAt, v))
+func ExecutedAtGT(v schema.Unix) predicate.Revision {
+	vc := int64(v)
+	return predicate.Revision(sql.FieldGT(FieldExecutedAt, vc))
 }
 
 // ExecutedAtGTE applies the GTE predicate on the "executed_at" field.
-func ExecutedAtGTE(v time.Time) predicate.Revision {
-	return predicate.Revision(sql.FieldGTE(FieldExecutedAt, v))
+func ExecutedAtGTE(v schema.Unix) predicate.Revision {
+	vc := int64(v)
+	return predicate.Revision(sql.FieldGTE(FieldExecutedAt, vc))
 }
 
 // ExecutedAtLT applies the LT predicate on the "executed_at" field.
-func ExecutedAtLT(v time.Time) predicate.Revision {
-	return predicate.Revision(sql.FieldLT(FieldExecutedAt, v))
+func ExecutedAtLT(v schema.Unix) predicate.Revision {
+	vc := int64(v)
+	return predicate.Revision(sql.FieldLT(FieldExecutedAt, vc))
 }
 
 // ExecutedAtLTE applies the LTE predicate on the "executed_at" field.
-func ExecutedAtLTE(v time.Time) predicate.Revision {
-	return predicate.Revision(sql.FieldLTE(FieldExecutedAt, v))
+func ExecutedAtLTE(v schema.Unix) predicate.Revision {
+	vc := int64(v)
+	return predicate.Revision(sql.FieldLTE(FieldExecutedAt, vc))
 }
 
 // ExecutionTimeEQ applies the EQ predicate on the "execution_time" field.

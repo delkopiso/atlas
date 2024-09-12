@@ -20,7 +20,7 @@ var (
 		{Name: "type", Type: field.TypeUint, Default: 2},
 		{Name: "applied", Type: field.TypeInt, Default: 0},
 		{Name: "total", Type: field.TypeInt, Default: 0},
-		{Name: "executed_at", Type: field.TypeTime},
+		{Name: "executed_at", Type: field.TypeInt64},
 		{Name: "execution_time", Type: field.TypeInt64},
 		{Name: "error", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "error_stmt", Type: field.TypeString, Nullable: true, Size: 2147483647},

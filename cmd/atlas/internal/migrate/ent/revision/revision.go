@@ -7,6 +7,7 @@
 package revision
 
 import (
+	"ariga.io/atlas/cmd/atlas/internal/migrate/ent/schema"
 	"ariga.io/atlas/sql/migrate"
 	"entgo.io/ent/dialect/sql"
 )
@@ -79,6 +80,8 @@ var (
 	DefaultTotal int
 	// TotalValidator is a validator for the "total" field. It is called by the builders before save.
 	TotalValidator func(int) error
+	// DefaultExecutedAt holds the default value on creation for the "executed_at" field.
+	DefaultExecutedAt func() schema.Unix
 )
 
 // OrderOption defines the ordering options for the Revision queries.

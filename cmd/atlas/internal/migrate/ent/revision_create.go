@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"ariga.io/atlas/cmd/atlas/internal/migrate/ent/revision"
+	"ariga.io/atlas/cmd/atlas/internal/migrate/ent/schema"
 	"ariga.io/atlas/sql/migrate"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
@@ -77,8 +78,16 @@ func (rc *RevisionCreate) SetNillableTotal(i *int) *RevisionCreate {
 }
 
 // SetExecutedAt sets the "executed_at" field.
-func (rc *RevisionCreate) SetExecutedAt(t time.Time) *RevisionCreate {
-	rc.mutation.SetExecutedAt(t)
+func (rc *RevisionCreate) SetExecutedAt(s schema.Unix) *RevisionCreate {
+	rc.mutation.SetExecutedAt(s)
+	return rc
+}
+
+// SetNillableExecutedAt sets the "executed_at" field if the given value is not nil.
+func (rc *RevisionCreate) SetNillableExecutedAt(s *schema.Unix) *RevisionCreate {
+	if s != nil {
+		rc.SetExecutedAt(*s)
+	}
 	return rc
 }
 
@@ -187,6 +196,10 @@ func (rc *RevisionCreate) defaults() {
 		v := revision.DefaultTotal
 		rc.mutation.SetTotal(v)
 	}
+	if _, ok := rc.mutation.ExecutedAt(); !ok {
+		v := revision.DefaultExecutedAt()
+		rc.mutation.SetExecutedAt(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -279,7 +292,7 @@ func (rc *RevisionCreate) createSpec() (*Revision, *sqlgraph.CreateSpec) {
 		_node.Total = value
 	}
 	if value, ok := rc.mutation.ExecutedAt(); ok {
-		_spec.SetField(revision.FieldExecutedAt, field.TypeTime, value)
+		_spec.SetField(revision.FieldExecutedAt, field.TypeInt64, value)
 		_node.ExecutedAt = value
 	}
 	if value, ok := rc.mutation.ExecutionTime(); ok {

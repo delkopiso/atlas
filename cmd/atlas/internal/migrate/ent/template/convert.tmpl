@@ -5,7 +5,10 @@
 {{ $pkg := base $.Config.Package }}
 {{ template "header" $ }}
 
-import "ariga.io/atlas/sql/migrate"
+import (
+    "ariga.io/atlas/cmd/atlas/internal/migrate/ent/schema"
+    "ariga.io/atlas/sql/migrate"
+)
 
 {{ range $n := $.Nodes }}
     {{ if eq $n.Name "Revision" }}
@@ -16,7 +19,7 @@ import "ariga.io/atlas/sql/migrate"
         func ({{ $receiver }} *{{ $builder }}) SetRevision(rev *migrate.Revision) *{{ $builder }} {
             {{ $receiver }}.SetID(rev.Version)
             {{- range $f := $n.Fields }}
-                {{ $receiver }}.Set{{ $f.StructField }}(rev.{{ $f.StructField }})
+                {{ if eq $f.StructField "ExecutedAt" }}{{ $receiver }}.Set{{ $f.StructField }}(schema.FromTime(rev.{{ $f.StructField }})){{ else }}{{ $receiver }}.Set{{ $f.StructField }}(rev.{{ $f.StructField }}){{ end }}
             {{- end }}
             return {{ $receiver }}
         }
@@ -26,7 +29,7 @@ import "ariga.io/atlas/sql/migrate"
             return &migrate.Revision{
                 Version: r.ID,
                 {{- range $f := $n.Fields }}
-                    {{ $f.StructField }}: r.{{ $f.StructField }},
+                    {{ if eq $f.StructField "ExecutedAt" }}{{ $f.StructField }}: r.{{ $f.StructField }}.Time(),{{ else }}{{ $f.StructField }}: r.{{ $f.StructField }},{{ end }}
                 {{- end }}
             }
         }

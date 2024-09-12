@@ -15,6 +15,7 @@ import (
 
 	"ariga.io/atlas/cmd/atlas/internal/migrate/ent/predicate"
 	"ariga.io/atlas/cmd/atlas/internal/migrate/ent/revision"
+	"ariga.io/atlas/cmd/atlas/internal/migrate/ent/schema"
 	"ariga.io/atlas/sql/migrate"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
@@ -45,7 +46,8 @@ type RevisionMutation struct {
 	addapplied           *int
 	total                *int
 	addtotal             *int
-	executed_at          *time.Time
+	executed_at          *schema.Unix
+	addexecuted_at       *schema.Unix
 	execution_time       *time.Duration
 	addexecution_time    *time.Duration
 	error                *string
@@ -369,12 +371,13 @@ func (m *RevisionMutation) ResetTotal() {
 }
 
 // SetExecutedAt sets the "executed_at" field.
-func (m *RevisionMutation) SetExecutedAt(t time.Time) {
-	m.executed_at = &t
+func (m *RevisionMutation) SetExecutedAt(s schema.Unix) {
+	m.executed_at = &s
+	m.addexecuted_at = nil
 }
 
 // ExecutedAt returns the value of the "executed_at" field in the mutation.
-func (m *RevisionMutation) ExecutedAt() (r time.Time, exists bool) {
+func (m *RevisionMutation) ExecutedAt() (r schema.Unix, exists bool) {
 	v := m.executed_at
 	if v == nil {
 		return
@@ -385,7 +388,7 @@ func (m *RevisionMutation) ExecutedAt() (r time.Time, exists bool) {
 // OldExecutedAt returns the old "executed_at" field's value of the Revision entity.
 // If the Revision object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *RevisionMutation) OldExecutedAt(ctx context.Context) (v time.Time, err error) {
+func (m *RevisionMutation) OldExecutedAt(ctx context.Context) (v schema.Unix, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldExecutedAt is only allowed on UpdateOne operations")
 	}
@@ -399,9 +402,28 @@ func (m *RevisionMutation) OldExecutedAt(ctx context.Context) (v time.Time, err 
 	return oldValue.ExecutedAt, nil
 }
 
+// AddExecutedAt adds s to the "executed_at" field.
+func (m *RevisionMutation) AddExecutedAt(s schema.Unix) {
+	if m.addexecuted_at != nil {
+		*m.addexecuted_at += s
+	} else {
+		m.addexecuted_at = &s
+	}
+}
+
+// AddedExecutedAt returns the value that was added to the "executed_at" field in this mutation.
+func (m *RevisionMutation) AddedExecutedAt() (r schema.Unix, exists bool) {
+	v := m.addexecuted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
 // ResetExecutedAt resets all changes to the "executed_at" field.
 func (m *RevisionMutation) ResetExecutedAt() {
 	m.executed_at = nil
+	m.addexecuted_at = nil
 }
 
 // SetExecutionTime sets the "execution_time" field.
@@ -862,7 +884,7 @@ func (m *RevisionMutation) SetField(name string, value ent.Value) error {
 		m.SetTotal(v)
 		return nil
 	case revision.FieldExecutedAt:
-		v, ok := value.(time.Time)
+		v, ok := value.(schema.Unix)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -927,6 +949,9 @@ func (m *RevisionMutation) AddedFields() []string {
 	if m.addtotal != nil {
 		fields = append(fields, revision.FieldTotal)
 	}
+	if m.addexecuted_at != nil {
+		fields = append(fields, revision.FieldExecutedAt)
+	}
 	if m.addexecution_time != nil {
 		fields = append(fields, revision.FieldExecutionTime)
 	}
@@ -944,6 +969,8 @@ func (m *RevisionMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedApplied()
 	case revision.FieldTotal:
 		return m.AddedTotal()
+	case revision.FieldExecutedAt:
+		return m.AddedExecutedAt()
 	case revision.FieldExecutionTime:
 		return m.AddedExecutionTime()
 	}
@@ -975,6 +1002,13 @@ func (m *RevisionMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddTotal(v)
+		return nil
+	case revision.FieldExecutedAt:
+		v, ok := value.(schema.Unix)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddExecutedAt(v)
 		return nil
 	case revision.FieldExecutionTime:
 		v, ok := value.(time.Duration)

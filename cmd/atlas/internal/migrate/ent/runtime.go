@@ -34,4 +34,8 @@ func init() {
 	revision.DefaultTotal = revisionDescTotal.Default.(int)
 	// revision.TotalValidator is a validator for the "total" field. It is called by the builders before save.
 	revision.TotalValidator = revisionDescTotal.Validators[0].(func(int) error)
+	// revisionDescExecutedAt is the schema descriptor for executed_at field.
+	revisionDescExecutedAt := revisionFields[5].Descriptor()
+	// revision.DefaultExecutedAt holds the default value on creation for the executed_at field.
+	revision.DefaultExecutedAt = revisionDescExecutedAt.Default.(func() schema.Unix)
 }

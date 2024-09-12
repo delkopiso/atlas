@@ -15,6 +15,20 @@ import (
 	"entgo.io/ent/schema/field"
 )
 
+type Unix int64
+
+func UnixNow() Unix {
+	return FromTime(time.Now().UTC())
+}
+
+func FromTime(t time.Time) Unix {
+	return Unix(t.UnixNano())
+}
+
+func (u Unix) Time() time.Time {
+	return time.Unix(0, int64(u)).UTC()
+}
+
 // DefaultRevisionSchema is the default schema for storing revisions table.
 const DefaultRevisionSchema = "atlas_schema_revisions"
 
@@ -40,7 +54,9 @@ func (Revision) Fields() []ent.Field {
 		field.Int("total").
 			NonNegative().
 			Default(0),
-		field.Time("executed_at").
+		field.Int64("executed_at").
+			GoType(Unix(0)).
+			DefaultFunc(UnixNow).
 			Immutable(),
 		field.Int64("execution_time").
 			GoType(time.Duration(0)),
