@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 golang:1.23.1-alpine AS build
+FROM golang:1.23.1-alpine AS build
 RUN apk --update add curl gcc git musl-dev util-linux-dev
 RUN go install golang.org/x/tools/cmd/stringer@latest
 
