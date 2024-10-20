@@ -7,6 +7,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"net/url"
@@ -15,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"modernc.org/sqlite"
 
 	"ariga.io/atlas/sql/internal/sqlx"
 	"ariga.io/atlas/sql/migrate"
@@ -51,7 +54,17 @@ var _ interface {
 // DriverName holds the name used for registration.
 const DriverName = "sqlite3"
 
+type sqliteDriver struct {
+	*sqlite.Driver
+}
+
+func (d sqliteDriver) Open(name string) (conn driver.Conn, err error) {
+	return d.Driver.Open(name)
+}
+
 func init() {
+	sql.Register(DriverName, sqliteDriver{Driver: &sqlite.Driver{}})
+
 	sqlclient.Register(
 		DriverName,
 		sqlclient.DriverOpener(Open),
