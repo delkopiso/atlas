@@ -16,20 +16,13 @@ import (
 	"ariga.io/atlas/cmd/atlas/internal/cmdapi"
 	"ariga.io/atlas/cmd/atlas/internal/cmdapi/vercheck"
 	"ariga.io/atlas/cmd/atlas/internal/cmdlog"
-	_ "ariga.io/atlas/cmd/atlas/internal/docker"
-	_ "ariga.io/atlas/sql/mysql"
-	_ "ariga.io/atlas/sql/mysql/mysqlcheck"
-	_ "ariga.io/atlas/sql/postgres"
-	_ "ariga.io/atlas/sql/postgres/postgrescheck"
 	_ "ariga.io/atlas/sql/sqlite"
 	_ "ariga.io/atlas/sql/sqlite/sqlitecheck"
 
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
 	"github.com/mattn/go-isatty"
-	_ "github.com/mattn/go-sqlite3"
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
 	"golang.org/x/mod/semver"
+	_ "modernc.org/sqlite"
 )
 
 func main() {

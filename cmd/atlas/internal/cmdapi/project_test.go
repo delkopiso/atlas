@@ -11,8 +11,6 @@ import (
 	"sort"
 	"testing"
 
-	"ariga.io/atlas/cmd/atlas/internal/cloudapi"
-	"ariga.io/atlas/cmd/atlas/internal/cmdext"
 	cmdmigrate "ariga.io/atlas/cmd/atlas/internal/migrate"
 	"ariga.io/atlas/schemahcl"
 	"ariga.io/atlas/sql/schema"
@@ -213,9 +211,6 @@ env "multi" {
 						schemahcl.StringAttr("token2", ""),
 					},
 				},
-			},
-			cloud: &cmdext.AtlasConfig{
-				Project: cloudapi.DefaultProjectName,
 			},
 		}, env)
 		sources, err := env.Sources()
