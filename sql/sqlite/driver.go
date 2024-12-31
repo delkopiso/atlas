@@ -167,11 +167,11 @@ func (d *Driver) CheckClean(ctx context.Context, revT *migrate.TableIdent) error
 }
 
 // Lock implements the schema.Locker interface.
-func (d *Driver) Lock(_ context.Context, name string, timeout time.Duration) (schema.UnlockFunc, error) {
+func (d *Driver) Lock(_ context.Context, name string, _ time.Duration) (schema.UnlockFunc, error) {
 	path := filepath.Join(os.TempDir(), name+".lock")
 	c, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return acquireLock(path, timeout)
+		return acquireLock()
 	}
 	if err != nil {
 		return nil, fmt.Errorf("sql/sqlite: reading lock dir: %w", err)
@@ -184,7 +184,7 @@ func (d *Driver) Lock(_ context.Context, name string, timeout time.Duration) (sc
 		// Lock is still valid.
 		return nil, fmt.Errorf("sql/sqlite: lock on %q already taken", name)
 	}
-	return acquireLock(path, timeout)
+	return acquireLock()
 }
 
 // Version returns the version of the connected database.
@@ -224,20 +224,8 @@ func (*Driver) ScanStmts(input string) ([]*migrate.Stmt, error) {
 	}).Scan(input)
 }
 
-func acquireLock(path string, timeout time.Duration) (schema.UnlockFunc, error) {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-		return nil, err
-	}
-	lock, err := os.Create(path)
-	if err != nil {
-		return nil, fmt.Errorf("sql/sqlite: creating lockfile %q: %w", path, err)
-	}
-	if _, err := lock.Write([]byte(strconv.FormatInt(time.Now().Add(timeout).UnixNano(), 10))); err != nil {
-		return nil, fmt.Errorf("sql/sqlite: writing to lockfile %q: %w", path, err)
-	}
-	defer lock.Close()
-	return func() error { return os.Remove(path) }, nil
+func acquireLock() (schema.UnlockFunc, error) {
+	return func() error { return nil }, nil
 }
 
 type violation struct {
