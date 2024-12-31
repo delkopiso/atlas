@@ -225,6 +225,10 @@ func (*Driver) ScanStmts(input string) ([]*migrate.Stmt, error) {
 }
 
 func acquireLock(path string, timeout time.Duration) (schema.UnlockFunc, error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		return nil, err
+	}
 	lock, err := os.Create(path)
 	if err != nil {
 		return nil, fmt.Errorf("sql/sqlite: creating lockfile %q: %w", path, err)
