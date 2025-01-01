@@ -24,8 +24,8 @@ import (
 	_ "ariga.io/atlas/sql/sqlite"
 
 	"github.com/fatih/color"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 func TestSchemaInspect_MarshalJSON(t *testing.T) {

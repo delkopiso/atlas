@@ -17,8 +17,8 @@ import (
 	"ariga.io/atlas/sql/sqlclient"
 	_ "ariga.io/atlas/sql/sqlite"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 func TestSchemaDirState(t *testing.T) {

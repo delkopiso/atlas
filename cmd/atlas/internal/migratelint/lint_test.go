@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
+
 	"ariga.io/atlas/cmd/atlas/internal/migratelint"
 	"ariga.io/atlas/sql/migrate"
 	_ "ariga.io/atlas/sql/sqlite"
-
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGitChangeDetector(t *testing.T) {

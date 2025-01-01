@@ -15,13 +15,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
+
 	"ariga.io/atlas/sql/migrate"
 	"ariga.io/atlas/sql/postgres"
 	"ariga.io/atlas/sql/schema"
 	"ariga.io/atlas/sql/sqlite"
-
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/stretchr/testify/require"
 )
 
 type liteTest struct {
