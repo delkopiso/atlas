@@ -1,4 +1,4 @@
-FROM golang:1.23.1-alpine AS build
+FROM golang:1.23.4-alpine3.21 AS build
 RUN apk --update add curl gcc git musl-dev util-linux-dev
 RUN go install golang.org/x/tools/cmd/stringer@latest
 
@@ -18,5 +18,5 @@ RUN go build -trimpath -ldflags "-extldflags '-static' -s -w -X ariga.io/atlas/c
 RUN chmod +x /app/bin/atlas
 
 
-FROM alpine
+FROM scratch
 COPY --from=build /app/bin/atlas /atlas
