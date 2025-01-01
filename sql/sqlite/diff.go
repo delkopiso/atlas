@@ -36,12 +36,12 @@ func (*diff) RealmObjectDiff(_, _ *schema.Realm) ([]schema.Change, error) {
 
 // SchemaObjectDiff returns a changeset for migrating schema objects from
 // one state to the other.
-func (*diff) SchemaObjectDiff(_, _ *schema.Schema) ([]schema.Change, error) {
+func (*diff) SchemaObjectDiff(_, _ *schema.Schema, _ *schema.DiffOptions) ([]schema.Change, error) {
 	return nil, nil
 }
 
 // TableAttrDiff returns a changeset for migrating table attributes from one state to the other.
-func (d *diff) TableAttrDiff(from, to *schema.Table) ([]schema.Change, error) {
+func (d *diff) TableAttrDiff(from, to *schema.Table, opts *schema.DiffOptions) ([]schema.Change, error) {
 	var changes []schema.Change
 	for _, a := range []schema.Attr{&WithoutRowID{}, &Strict{}} {
 		switch {
@@ -55,23 +55,23 @@ func (d *diff) TableAttrDiff(from, to *schema.Table) ([]schema.Change, error) {
 			})
 		}
 	}
-	return append(changes, sqlx.CheckDiff(from, to)...), nil
+	return append(changes, sqlx.CheckDiffMode(from, to, opts.Mode)...), nil
 }
 
-func (d *diff) ViewAttrChanged(_, _ *schema.View) bool {
-	return false // Not implemented.
+func (*diff) ViewAttrChanges(_, _ *schema.View) []schema.Change {
+	return nil // Not implemented.
 }
 
 // ColumnChange returns the schema changes (if any) for migrating one column to the other.
 // Note that column comments are ignored as SQLite does not support it.
-func (d *diff) ColumnChange(_ *schema.Table, from, to *schema.Column) (schema.ChangeKind, error) {
+func (d *diff) ColumnChange(_ *schema.Table, from, to *schema.Column, _ *schema.DiffOptions) (schema.Change, error) {
 	var change schema.ChangeKind
 	if from.Type.Null != to.Type.Null {
 		change |= schema.ChangeNull
 	}
 	changed, err := d.typeChanged(from, to)
 	if err != nil {
-		return schema.NoChange, err
+		return sqlx.NoChange, err
 	}
 	if changed {
 		change |= schema.ChangeType
@@ -82,7 +82,14 @@ func (d *diff) ColumnChange(_ *schema.Table, from, to *schema.Column) (schema.Ch
 	if d.generatedChanged(from, to) {
 		change |= schema.ChangeGenerated
 	}
-	return change, nil
+	if change.Is(schema.NoChange) {
+		return sqlx.NoChange, nil
+	}
+	return &schema.ModifyColumn{
+		Change: change,
+		From:   from,
+		To:     to,
+	}, nil
 }
 
 // typeChanged reports if the column type was changed.
@@ -90,6 +97,10 @@ func (d *diff) typeChanged(from, to *schema.Column) (bool, error) {
 	fromT, toT := from.Type.Type, to.Type.Type
 	if fromT == nil || toT == nil {
 		return false, fmt.Errorf("sqlite: missing type information for column %q", from.Name)
+	}
+	if u1, ok := fromT.(*UserDefinedType); ok {
+		u2, ok := toT.(*UserDefinedType)
+		return !ok || u1.T != u2.T, nil
 	}
 	// Types are mismatched if they do not have the same "type affinity".
 	return reflect.TypeOf(fromT) != reflect.TypeOf(toT), nil
@@ -164,6 +175,11 @@ func (*diff) ReferenceChanged(from, to schema.ReferenceOption) bool {
 		to = schema.NoAction
 	}
 	return from != to
+}
+
+// ForeignKeyAttrChanged reports if any of the foreign-key attributes were changed.
+func (*diff) ForeignKeyAttrChanged(_, _ []schema.Attr) bool {
+	return false
 }
 
 // Normalize implements the sqlx.Normalizer interface.

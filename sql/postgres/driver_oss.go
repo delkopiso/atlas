@@ -30,11 +30,6 @@ var (
 	}
 )
 
-// newTable creates a new table.
-func (*inspect) newTable(_ context.Context, name, _ string) *schema.Table {
-	return schema.NewTable(name) // Default implementation.
-}
-
 func tableAttrsSpec(*schema.Table, *sqlspec.Table) {
 	// unimplemented.
 }
@@ -197,8 +192,8 @@ func (*state) modifyTrigger(*schema.ModifyTrigger) error {
 	return nil // unimplemented.
 }
 
-func (d *diff) ViewAttrChanged(_, _ *schema.View) bool {
-	return false // unimplemented.
+func (*diff) ViewAttrChanges(_, _ *schema.View) []schema.Change {
+	return nil // unimplemented.
 }
 
 // RealmObjectDiff returns a changeset for migrating realm (database) objects
@@ -209,7 +204,7 @@ func (*diff) RealmObjectDiff(_, _ *schema.Realm) ([]schema.Change, error) {
 
 // SchemaObjectDiff returns a changeset for migrating schema objects from
 // one state to the other.
-func (*diff) SchemaObjectDiff(from, to *schema.Schema) ([]schema.Change, error) {
+func (*diff) SchemaObjectDiff(from, to *schema.Schema, _ *schema.DiffOptions) ([]schema.Change, error) {
 	var changes []schema.Change
 	// Drop or modify enums.
 	for _, o1 := range from.Objects {

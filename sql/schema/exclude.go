@@ -17,29 +17,40 @@ func ExcludeRealm(r *Realm, patterns []string) (*Realm, error) {
 	if len(patterns) == 0 {
 		return r, nil
 	}
-	var schemas []*Schema
 	globs, err := split(patterns)
 	if err != nil {
 		return nil, err
 	}
+	for _, g := range globs {
+		// Realm objects are top-level
+		// resources, must like schemas.
+		if len(g) == 1 {
+			if r.Objects, err = excludeObjects(r.Objects, g); err != nil {
+				return nil, err
+			}
+		}
+	}
+	var schemas []*Schema
 Filter:
 	for _, s := range r.Schemas {
 		for i, g := range globs {
 			if len(g) > 3 {
 				return nil, fmt.Errorf("too many parts in pattern: %q", patterns[i])
 			}
-			match, err := filepath.Match(g[0], s.Name)
-			if err != nil {
-				return nil, err
-			}
-			if match {
-				// In case there is a match, and it is
-				// a single glob we exclude this
-				if len(g) == 1 {
-					continue Filter
-				}
-				if err := excludeS(s, g[1:]); err != nil {
+			if globS, exclude := excludeType(typeS, g[0]); exclude {
+				match, err := filepath.Match(globS, s.Name)
+				if err != nil {
 					return nil, err
+				}
+				if match {
+					// In case there is a match, and it is
+					// a single glob we exclude this
+					if len(g) == 1 {
+						continue Filter
+					}
+					if err := excludeS(s, g[1:]); err != nil {
+						return nil, err
+					}
 				}
 			}
 		}
@@ -88,42 +99,10 @@ func split(patterns []string) ([][]string, error) {
 	return globs, nil
 }
 
-func excludeS(s *Schema, glob []string) error {
-	var (
-		objects = make([]Object, 0, len(s.Objects))
-		t2glob  = make(map[string]struct {
-			glob    string
-			exclude bool
-		})
-	)
-	for _, o := range s.Objects {
-		nt, ok := o.(interface {
-			SpecType() string
-			SpecName() string
-		})
-		if !ok {
-			objects = append(objects, o)
-			continue
-		}
-		cache, ok := t2glob[nt.SpecType()]
-		if !ok {
-			cache.glob, cache.exclude = excludeType(nt.SpecType(), glob[0])
-			t2glob[nt.SpecType()] = cache
-		}
-		if cache.exclude {
-			match, err := filepath.Match(cache.glob, nt.SpecName())
-			if err != nil {
-				return err
-			}
-			// No match or glob has more than one pattern.
-			if !match || len(glob) != 1 {
-				objects = append(objects, o)
-			}
-		} else {
-			objects = append(objects, o)
-		}
+func excludeS(s *Schema, glob []string) (err error) {
+	if s.Objects, err = excludeObjects(s.Objects, glob); err != nil {
+		return err
 	}
-	s.Objects = objects
 	if globT, exclude := excludeType(typeT, glob[0]); exclude {
 		var tables []*Table
 		for _, t := range s.Tables {
@@ -230,7 +209,7 @@ func excludeT(t *Table, pattern string) (err error) {
 			return filepath.Match(p, fk.Symbol)
 		})
 	}
-	if p, exclude := excludeType(typeG, pattern); exclude {
+	if p, exclude := excludeType(typeTg, pattern); exclude {
 		t.Triggers, err = filter(t.Triggers, func(t *Trigger) (bool, error) {
 			return filepath.Match(p, t.Name)
 		})
@@ -261,7 +240,7 @@ func excludeV(v *View, pattern string) (err error) {
 			return true, nil
 		})
 	}
-	if p, exclude := excludeType(typeG, pattern); exclude {
+	if p, exclude := excludeType(typeTg, pattern); exclude {
 		v.Triggers, err = filter(v.Triggers, func(t *Trigger) (bool, error) {
 			return filepath.Match(p, t.Name)
 		})
@@ -269,19 +248,58 @@ func excludeV(v *View, pattern string) (err error) {
 	return
 }
 
+func excludeObjects(all []Object, glob []string) ([]Object, error) {
+	var (
+		objects = make([]Object, 0, len(all))
+		t2glob  = make(map[string]struct {
+			glob    string
+			exclude bool
+		})
+	)
+	for _, o := range all {
+		nt, ok := o.(interface {
+			SpecType() string
+			SpecName() string
+		})
+		if !ok {
+			objects = append(objects, o)
+			continue
+		}
+		cache, ok := t2glob[nt.SpecType()]
+		if !ok {
+			cache.glob, cache.exclude = excludeType(nt.SpecType(), glob[0])
+			t2glob[nt.SpecType()] = cache
+		}
+		if cache.exclude {
+			match, err := filepath.Match(cache.glob, nt.SpecName())
+			if err != nil {
+				return nil, err
+			}
+			// No match or glob has more than one pattern.
+			if !match || len(glob) != 1 {
+				objects = append(objects, o)
+			}
+		} else {
+			objects = append(objects, o)
+		}
+	}
+	return objects, nil
+}
+
 const (
 	typeV  = "view"
 	typeT  = "table"
+	typeS  = "schema"
 	typeC  = "column"
 	typeI  = "index"
 	typeF  = "fk"
-	typeG  = "trigger"
 	typeK  = "check"
+	typeTg = "trigger"
 	typeFn = "function"
 	typePr = "procedure"
 )
 
-var reType = regexp.MustCompile(`\[type=([a-z|]+)+\]$`)
+var reType = regexp.MustCompile(`\[type=([a-z|_]+)+\]$`)
 
 func excludeType(t, v string) (string, bool) {
 	matches := reType.FindStringSubmatch(v)

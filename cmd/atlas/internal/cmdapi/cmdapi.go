@@ -105,6 +105,11 @@ type (
 	AbortError struct {
 		Err error
 	}
+	// Aborter allows errors to signal if the error is an abort error.
+	Aborter interface {
+		error
+		IsAbort()
+	}
 )
 
 func (e *FormattedError) Error() string { return e.Err.Error() }
@@ -129,10 +134,14 @@ func (e *AbortError) FormatError(cmd *cobra.Command) {
 
 // RunE wraps the command cobra.Command.RunE function with additional postrun logic.
 func RunE(f func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
-	return func(cmd *cobra.Command, args []string) error {
-		err := f(cmd, args)
-		if ef, ok := err.(ErrorFormatter); ok {
-			ef.FormatError(cmd)
+	return func(cmd *cobra.Command, args []string) (err error) {
+		if err = f(cmd, args); err != nil {
+			if err1 := (Aborter)(nil); errors.As(err, &err1) {
+				err = &AbortError{Err: err}
+			}
+			if ef, ok := err.(ErrorFormatter); ok {
+				ef.FormatError(cmd)
+			}
 		}
 		return err
 	}
@@ -148,32 +157,6 @@ func init() {
 		GlobalFlags.Vars = nil
 		GlobalFlags.SelectedEnv = ""
 	})
-}
-
-// inputValuesFromEnv populates GlobalFlags.Vars from the active environment. If we are working
-// inside a project, the "var" flag is not propagated to the schema definition. Instead, it
-// is used to evaluate the project file which can pass input values via the "values" block
-// to the schema.
-func inputValuesFromEnv(cmd *cobra.Command, env *Env) error {
-	if fl := cmd.Flag(flagVar); fl == nil {
-		return nil
-	}
-	values, err := env.asMap()
-	if err != nil {
-		return err
-	}
-	if len(values) == 0 {
-		return nil
-	}
-	pairs := make([]string, 0, len(values))
-	for k, v := range values {
-		pairs = append(pairs, fmt.Sprintf("%s=%s", k, v))
-	}
-	vars := strings.Join(pairs, ",")
-	if err := cmd.Flags().Set(flagVar, vars); err != nil {
-		return fmt.Errorf("set flag %q: %w", flagVar, err)
-	}
-	return nil
 }
 
 // parseV returns a user facing version and release notes url

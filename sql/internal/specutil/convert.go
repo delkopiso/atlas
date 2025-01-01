@@ -64,6 +64,8 @@ type (
 		Triggers func(*schema.Realm, []*sqlspec.Trigger) error
 		// Objects add themselves to the realm.
 		Objects func(*schema.Realm) error
+		// Optional function to extend the foreign keys.
+		ForeignKey func(*sqlspec.ForeignKey, *schema.ForeignKey) error
 	}
 
 	// SchemaFuncs represents a set of spec functions
@@ -127,6 +129,7 @@ func Scan(r *schema.Realm, doc *ScanDoc, funcs *ScanFuncs) error {
 		if err := convertCommentFromSpec(s, &s1.Attrs); err != nil {
 			return err
 		}
+		schemahcl.AppendPos(&s1.Attrs, s.Range)
 		r.AddSchemas(s1)
 		byName[s.Name] = s1
 	}
@@ -159,7 +162,7 @@ func Scan(r *schema.Realm, doc *ScanDoc, funcs *ScanFuncs) error {
 	}
 	// Link the foreign keys.
 	for t, fks := range fks {
-		if err := linkForeignKeys(t, fks); err != nil {
+		if err := linkForeignKeys(funcs, t, fks); err != nil {
 			return err
 		}
 	}
@@ -297,18 +300,21 @@ func Table(spec *sqlspec.Table, parent *schema.Schema, convertColumn ConvertTabl
 		Name:   spec.Name,
 		Schema: parent,
 	}
-	for _, csp := range spec.Columns {
-		col, err := convertColumn(csp, t)
+	schemahcl.AppendPos(&t.Attrs, spec.Range)
+	for _, cs := range spec.Columns {
+		c, err := convertColumn(cs, t)
 		if err != nil {
 			return nil, err
 		}
-		t.AddColumns(col)
+		schemahcl.AppendPos(&c.Attrs, cs.Range)
+		t.AddColumns(c)
 	}
 	if spec.PrimaryKey != nil {
 		pk, err := convertPK(spec.PrimaryKey, t)
 		if err != nil {
 			return nil, err
 		}
+		schemahcl.AppendPos(&pk.Attrs, spec.PrimaryKey.Range)
 		t.SetPrimaryKey(pk)
 	}
 	for _, idx := range spec.Indexes {
@@ -316,14 +322,16 @@ func Table(spec *sqlspec.Table, parent *schema.Schema, convertColumn ConvertTabl
 		if err != nil {
 			return nil, err
 		}
+		schemahcl.AppendPos(&i.Attrs, idx.Range)
 		t.AddIndexes(i)
 	}
 	for _, c := range spec.Checks {
-		c, err := convertCheck(c)
+		ck, err := convertCheck(c)
 		if err != nil {
 			return nil, err
 		}
-		t.AddChecks(c)
+		schemahcl.AppendPos(&ck.Attrs, c.Range)
+		t.AddChecks(ck)
 	}
 	if err := convertCommentFromSpec(spec, &t.Attrs); err != nil {
 		return nil, err
@@ -342,11 +350,13 @@ func View(spec *sqlspec.View, parent *schema.Schema, convertC ConvertViewColumnF
 		return nil, fmt.Errorf("expect string definition for attribute view.%s.as: %w", spec.Name, err)
 	}
 	v := schema.NewView(spec.Name, def).SetSchema(parent)
-	for _, c := range spec.Columns {
-		c, err := convertC(c, v)
+	schemahcl.AppendPos(&v.Attrs, spec.Range)
+	for _, cs := range spec.Columns {
+		c, err := convertC(cs, v)
 		if err != nil {
 			return nil, err
 		}
+		schemahcl.AppendPos(&c.Attrs, cs.Range)
 		v.AddColumns(c)
 	}
 	for _, idx := range spec.Indexes {
@@ -354,6 +364,7 @@ func View(spec *sqlspec.View, parent *schema.Schema, convertC ConvertViewColumnF
 		if err != nil {
 			return nil, err
 		}
+		schemahcl.AppendPos(&i.Attrs, idx.Range)
 		v.AddIndexes(i)
 	}
 	if err := convertCommentFromSpec(spec, &v.Attrs); err != nil {
@@ -469,16 +480,21 @@ func Index(spec *sqlspec.Index, parent *schema.Table, partFns ...func(*sqlspec.I
 			parts = append(parts, part)
 		}
 	}
-	i := &schema.Index{
+	idx := &schema.Index{
 		Name:   spec.Name,
 		Unique: spec.Unique,
 		Table:  parent,
 		Parts:  parts,
 	}
-	if err := convertCommentFromSpec(spec, &i.Attrs); err != nil {
+	if err := convertCommentFromSpec(spec, &idx.Attrs); err != nil {
 		return nil, err
 	}
-	return i, nil
+	for _, p := range idx.Parts {
+		if p.C != nil {
+			p.C.AddIndexes(idx)
+		}
+	}
+	return idx, nil
 }
 
 // Check converts a sqlspec.Check to a schema.Check.
@@ -502,18 +518,28 @@ func PrimaryKey(spec *sqlspec.PrimaryKey, parent *schema.Table) (*schema.Index, 
 			C:     c,
 		})
 	}
-	return &schema.Index{
+	pk := &schema.Index{
 		Table: parent,
 		Parts: parts,
-	}, nil
+	}
+	if err := convertCommentFromSpec(spec, &pk.Attrs); err != nil {
+		return nil, err
+	}
+	for _, p := range pk.Parts {
+		if p.C != nil {
+			p.C.AddIndexes(pk)
+		}
+	}
+	return pk, nil
 }
 
 // linkForeignKeys creates the foreign keys defined in the Table's spec by creating references
 // to column in the provided Schema. It is assumed that all tables referenced FK definitions in the spec
 // are reachable from the provided schema or its connected realm.
-func linkForeignKeys(tbl *schema.Table, fks []*sqlspec.ForeignKey) error {
+func linkForeignKeys(funcs *ScanFuncs, tbl *schema.Table, fks []*sqlspec.ForeignKey) error {
 	for _, spec := range fks {
 		fk := &schema.ForeignKey{Symbol: spec.Symbol, Table: tbl}
+		schemahcl.AppendPos(&fk.Attrs, spec.Range)
 		if spec.OnUpdate != nil {
 			fk.OnUpdate = schema.ReferenceOption(FromVar(spec.OnUpdate.V))
 		}
@@ -546,6 +572,11 @@ func linkForeignKeys(tbl *schema.Table, fks []*sqlspec.ForeignKey) error {
 			fk.RefColumns = append(fk.RefColumns, c)
 		}
 		tbl.ForeignKeys = append(tbl.ForeignKeys, fk)
+		if funcs.ForeignKey != nil {
+			if err := funcs.ForeignKey(spec, fk); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

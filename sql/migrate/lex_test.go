@@ -20,10 +20,24 @@ func TestLocalFile_Stmts(t *testing.T) {
 	files, err := dir.Files()
 	require.NoError(t, err)
 	for _, f := range files {
-		stmts, err := f.Stmts()
+		sc := &Scanner{
+			ScannerOptions: ScannerOptions{
+				MatchBegin:       true,
+				MatchBeginAtomic: true,
+				MatchDollarQuote: true,
+				BackslashEscapes: true,
+				EscapedStringExt: true,
+				HashComments:     !strings.Contains(f.Name(), "_pg"),
+			},
+		}
+		decls, err := sc.Scan(string(f.Bytes()))
 		require.NoErrorf(t, err, "file: %s", f.Name())
 		buf, err := os.ReadFile(filepath.Join(path, f.Name()+".golden"))
 		require.NoError(t, err)
+		stmts := make([]string, len(decls))
+		for i, s := range decls {
+			stmts[i] = s.Text
+		}
 		require.Equalf(t, string(buf), strings.Join(stmts, "\n-- end --\n"), "mismatched statements in file %q", f.Name())
 	}
 }
@@ -85,6 +99,36 @@ func TestScanner_EscapedStrings(t *testing.T) {
 	require.Equalf(t, string(buf), strings.Join(got, "\n-- end --\n"), "mismatched statements in file %q", files[1].Name())
 }
 
+func TestScanner_BeginTryCatch(t *testing.T) {
+	path := filepath.Join("testdata", "lexbegintry")
+	dir, err := NewLocalDir(path)
+	require.NoError(t, err)
+	files, err := dir.Files()
+	require.NoError(t, err)
+	for _, f := range files {
+		sc := &Scanner{
+			ScannerOptions: ScannerOptions{
+				MatchBegin:         true,
+				MatchBeginAtomic:   true,
+				MatchBeginTryCatch: true,
+				MatchDollarQuote:   true,
+				BackslashEscapes:   true,
+				EscapedStringExt:   true,
+				HashComments:       false,
+			},
+		}
+		decls, err := sc.Scan(string(f.Bytes()))
+		require.NoErrorf(t, err, "file: %s", f.Name())
+		buf, err := os.ReadFile(filepath.Join(path, f.Name()+".golden"))
+		require.NoError(t, err)
+		stmts := make([]string, len(decls))
+		for i, s := range decls {
+			stmts[i] = s.Text
+		}
+		require.Equalf(t, string(buf), strings.Join(stmts, "\n-- end --\n"), "mismatched statements in file %q", f.Name())
+	}
+}
+
 func TestLocalFile_StmtDecls(t *testing.T) {
 	f := `cmd0;
 -- test
@@ -125,7 +169,17 @@ cmd6;
 -- atlas:nolint
 cmd7;
 `
-	stmts, err := NewLocalFile("f", []byte(f)).StmtDecls()
+	sc := &Scanner{
+		ScannerOptions: ScannerOptions{
+			MatchBegin:       true,
+			MatchBeginAtomic: true,
+			MatchDollarQuote: true,
+			BackslashEscapes: true,
+			EscapedStringExt: true,
+			HashComments:     true,
+		},
+	}
+	stmts, err := sc.Scan(f)
 	require.NoError(t, err)
 	require.Len(t, stmts, 8)
 

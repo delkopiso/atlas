@@ -7,12 +7,17 @@ package sqlx
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"ariga.io/atlas/sql/schema"
 )
+
+// NoChange can be returned by DiffDriver methods
+// to indicate that no change is needed.
+var NoChange = schema.Change(nil)
 
 type (
 	// A Diff provides a generic schema.Differ for diffing schema elements.
@@ -37,18 +42,17 @@ type (
 
 		// SchemaObjectDiff returns a changeset for migrating schema objects from
 		// one state to the other. For example, changing schema custom types.
-		SchemaObjectDiff(from, to *schema.Schema) ([]schema.Change, error)
+		SchemaObjectDiff(from, to *schema.Schema, _ *schema.DiffOptions) ([]schema.Change, error)
 
 		// TableAttrDiff returns a changeset for migrating table attributes from
 		// one state to the other. For example, dropping or adding a `CHECK` constraint.
-		TableAttrDiff(from, to *schema.Table) ([]schema.Change, error)
+		TableAttrDiff(from, to *schema.Table, _ *schema.DiffOptions) ([]schema.Change, error)
 
-		// ViewAttrChanged reports if the view attributes were changed.
-		// For example, a view was changed to a materialized view.
-		ViewAttrChanged(from, to *schema.View) bool
+		// ViewAttrChanges returns the changes between the two view attributes.
+		ViewAttrChanges(from, to *schema.View) []schema.Change
 
 		// ColumnChange returns the schema changes (if any) for migrating one column to the other.
-		ColumnChange(fromT *schema.Table, from, to *schema.Column) (schema.ChangeKind, error)
+		ColumnChange(fromT *schema.Table, from, to *schema.Column, _ *schema.DiffOptions) (schema.Change, error)
 
 		// IndexAttrChanged reports if the index attributes were changed.
 		// For example, an index type or predicate (for partial indexes).
@@ -67,6 +71,9 @@ type (
 		// ReferenceChanged reports if the foreign key referential action was
 		// changed. For example, action was changed from RESTRICT to CASCADE.
 		ReferenceChanged(from, to schema.ReferenceOption) bool
+
+		// ForeignKeyAttrChanged reports if any of the foreign-key attributes were changed.
+		ForeignKeyAttrChanged(from, to []schema.Attr) bool
 	}
 
 	// DropSchemaChanger is an optional interface allows DiffDriver to drop
@@ -193,7 +200,7 @@ func (d *Diff) schemaDiff(from, to *schema.Schema, opts *schema.DiffOptions) ([]
 		})
 	}
 	// Add, drop or modify objects.
-	change, err := d.SchemaObjectDiff(from, to)
+	change, err := d.SchemaObjectDiff(from, to, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -240,10 +247,10 @@ func (d *Diff) schemaDiff(from, to *schema.Schema, opts *schema.DiffOptions) ([]
 			changes = opts.AddOrSkip(changes, &schema.DropView{V: v1})
 			continue
 		}
-		if change, err := d.indexDiffV(v1, v2, opts); err != nil {
+		if change, err := d.viewDiff(v1, v2, opts); err != nil {
 			return nil, err
-		} else if len(change) > 0 || d.viewDefChanged(v1, v2) || d.ViewAttrChanged(v1, v2) {
-			changes = opts.AddOrSkip(changes, &schema.ModifyView{From: v1, To: v2, Changes: change})
+		} else {
+			changes = append(changes, change...)
 		}
 		if change, err := d.triggerDiff(v1, v2, v1.Triggers, v2.Triggers, opts); err != nil {
 			return nil, err
@@ -303,7 +310,7 @@ func (d *Diff) tableDiff(from, to *schema.Table, opts *schema.DiffOptions) ([]sc
 	}
 	var changes []schema.Change
 	// Drop or modify attributes (collations, checks, etc).
-	change, err := d.TableAttrDiff(from, to)
+	change, err := d.TableAttrDiff(from, to, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -386,16 +393,12 @@ func (d *Diff) columnDiff(from, to *schema.Table, opts *schema.DiffOptions) ([]s
 			all = append(all, &schema.DropColumn{C: c1})
 			continue
 		}
-		change, err := d.ColumnChange(from, c1, c2)
+		change, err := d.ColumnChange(from, c1, c2, opts)
 		if err != nil {
 			return nil, err
 		}
-		if change != schema.NoChange {
-			all = append(all, &schema.ModifyColumn{
-				From:   c1,
-				To:     c2,
-				Change: change,
-			})
+		if change != NoChange {
+			all = append(all, change)
 		}
 	}
 	// Add columns.
@@ -427,7 +430,7 @@ func (d *Diff) pkDiff(from, to *schema.Table, opts *schema.DiffOptions) (changes
 		changes = opts.AddOrSkip(changes, &schema.AddPrimaryKey{P: pk2})
 	case pk1 != nil && pk2 == nil:
 		changes = opts.AddOrSkip(changes, &schema.DropPrimaryKey{P: pk1})
-	case pk1 != nil && pk2 != nil:
+	case pk1 != nil:
 		change := d.indexChange(pk1, pk2)
 		change &= ^schema.ChangeUnique
 		if change != schema.NoChange {
@@ -495,6 +498,24 @@ func (d *Diff) indexDiffT(from, to *schema.Table, opts *schema.DiffOptions) ([]s
 	return changes, nil
 }
 
+// viewDiff returns the schema changes (if any) for migrating view from
+// current state to the desired state.
+func (d *Diff) viewDiff(from, to *schema.View, opts *schema.DiffOptions) ([]schema.Change, error) {
+	c1, err := d.indexDiffV(from, to, opts)
+	if err != nil {
+		return nil, err
+	}
+	c2, err := d.columnDiffV(from, to, opts)
+	if err != nil {
+		return nil, err
+	}
+	var changes []schema.Change
+	if vs := append(d.ViewAttrChanges(from, to), append(c1, c2...)...); len(vs) > 0 || d.viewDefChanged(from, to) {
+		changes = opts.AddOrSkip(changes, &schema.ModifyView{From: from, To: to, Changes: vs})
+	}
+	return changes, nil
+}
+
 // viewDefChanged checks if the view definition has changed.
 // It allows the DiffDriver to override the default implementation.
 func (d *Diff) viewDefChanged(v1 *schema.View, v2 *schema.View) bool {
@@ -504,6 +525,26 @@ func (d *Diff) viewDefChanged(v1 *schema.View, v2 *schema.View) bool {
 		return vr.ViewDefChanged(v1, v2)
 	}
 	return BodyDefChanged(v1.Def, v2.Def)
+}
+
+// columnDiffV returns the schema changes (if any) for migrating view columns.
+// Currently, only comment changes are supported.
+func (d *Diff) columnDiffV(from, to *schema.View, opts *schema.DiffOptions) ([]schema.Change, error) {
+	var changes []schema.Change
+	for _, c1 := range from.Columns {
+		c2, ok := to.Column(c1.Name)
+		if !ok {
+			continue
+		}
+		if change := CommentChange(c1.Attrs, c2.Attrs); change != schema.NoChange {
+			changes = opts.AddOrSkip(changes, &schema.ModifyColumn{
+				From:   c1,
+				To:     c2,
+				Change: change,
+			})
+		}
+	}
+	return changes, nil
 }
 
 // indexDiffV returns the schema changes (if any) for migrating view
@@ -613,6 +654,9 @@ func (d *Diff) fkChange(from, to *schema.ForeignKey) schema.ChangeKind {
 	}
 	if d.ReferenceChanged(from.OnDelete, to.OnDelete) {
 		change |= schema.ChangeDeleteAction
+	}
+	if d.ForeignKeyAttrChanged(from.Attrs, to.Attrs) {
+		change |= schema.ChangeAttr
 	}
 	return change
 }
@@ -763,9 +807,58 @@ func CommentDiff(from, to []schema.Attr) schema.Change {
 	return nil
 }
 
-// CheckDiff computes the change diff between the 2 tables. A compare
-// function is provided to check if a Check object was modified.
-func CheckDiff(from, to *schema.Table, compare ...func(c1, c2 *schema.Check) bool) []schema.Change {
+// CheckDiffMode is like CheckDiff, but compares also expressions
+// if the schema.DiffMode is equal to schema.DiffModeNormalized.
+func CheckDiffMode(from, to *schema.Table, mode schema.DiffMode, compare ...func(c1, c2 *schema.Check) bool) []schema.Change {
+	if !mode.Is(schema.DiffModeNormalized) {
+		return checksSimilarDiff(from, to, compare...)
+	}
+	return ChecksDiff(from, to, func(c1, c2 *schema.Check) bool {
+		if len(compare) == 1 && !compare[0](c1, c2) {
+			return false
+		}
+		return c1.Expr == c2.Expr || MayWrap(c1.Expr) == MayWrap(c2.Expr)
+	})
+}
+
+// ChecksDiff computes the change diff between the 2 tables.
+func ChecksDiff(from, to *schema.Table, compare func(c1, c2 *schema.Check) bool) []schema.Change {
+	var (
+		changes    []schema.Change
+		fromC, toC = checks(from.Attrs), checks(to.Attrs)
+	)
+	for _, c1 := range fromC {
+		idx := slices.IndexFunc(toC, func(c2 *schema.Check) bool {
+			return c1.Name == c2.Name
+		})
+		if idx == -1 {
+			changes = append(changes, &schema.DropCheck{
+				C: c1,
+			})
+		} else if c2 := toC[idx]; !compare(c1, c2) {
+			changes = append(changes, &schema.ModifyCheck{
+				From: c1,
+				To:   c2,
+			})
+		}
+	}
+	for _, c1 := range toC {
+		if !slices.ContainsFunc(fromC, func(c2 *schema.Check) bool {
+			return c1.Name == c2.Name
+		}) {
+			changes = append(changes, &schema.AddCheck{
+				C: c1,
+			})
+		}
+	}
+	return changes
+}
+
+// checksSimilarDiff computes the change diff between the 2 tables.
+// Unlike ChecksDiff, it does not compare the constraint name, but
+// determines if there is any similar constraint by its expression.
+// This is an old implementation that is not used anymore by the CLI.
+func checksSimilarDiff(from, to *schema.Table, compare ...func(c1, c2 *schema.Check) bool) []schema.Change {
 	var changes []schema.Change
 	// Drop or modify checks.
 	for _, c1 := range checks(from.Attrs) {

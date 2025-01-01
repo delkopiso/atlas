@@ -7,10 +7,22 @@
 package pgparse
 
 import (
+	"errors"
+
+	"ariga.io/atlas/sql/migrate"
 	"ariga.io/atlas/sql/schema"
-	pgquery "github.com/pganalyze/pg_query_go/v5"
 )
 
-func FixAlterTable(_ string, _ *pgquery.AlterTableStmt, changes schema.Changes) (schema.Changes, error) {
+type Parser struct{}
+
+func (*Parser) ColumnFilledBefore([]*migrate.Stmt, *schema.Table, *schema.Column, int) (bool, error) {
+	return false, errors.New("unimplemented")
+}
+
+func (*Parser) CreateViewAfter([]*migrate.Stmt, string, string, int) (bool, error) {
+	return false, errors.New("unimplemented")
+}
+
+func (*Parser) FixChange(_ migrate.Driver, _ string, changes schema.Changes) (schema.Changes, error) {
 	return changes, nil // Unimplemented.
 }

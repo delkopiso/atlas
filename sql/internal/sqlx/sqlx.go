@@ -112,15 +112,33 @@ func SchemaFKs(s *schema.Schema, rows *sql.Rows) error {
 	return TypedSchemaFKs[*nullString](s, rows)
 }
 
+// FKAttrScanner allows extending foreign-keys
+// scanning with extra attributes.
+type FKAttrScanner struct {
+	Columns  func() []any
+	ScanFunc func(*schema.ForeignKey, []any) error
+}
+
 // TypedSchemaFKs is a version of SchemaFKs that allows to specify the type of
 // used to scan update and delete actions from the database.
-func TypedSchemaFKs[T ScanStringer](s *schema.Schema, rows *sql.Rows) error {
+func TypedSchemaFKs[T ScanStringer](s *schema.Schema, rows *sql.Rows, attr ...*FKAttrScanner) error {
 	for rows.Next() {
 		var (
 			updateAction, deleteAction                                   = V(new(T)), V(new(T))
 			name, table, column, tSchema, refTable, refColumn, refSchema string
+			columns                                                      = []any{
+				&name, &table, &column, &tSchema, &refTable, &refColumn, &refSchema, &updateAction, &deleteAction,
+			}
+			origin = len(columns)
 		)
-		if err := rows.Scan(&name, &table, &column, &tSchema, &refTable, &refColumn, &refSchema, &updateAction, &deleteAction); err != nil {
+		// Allows to scan extra attributes.
+		switch {
+		case len(attr) > 1:
+			return fmt.Errorf("unexpected number of attributes scanners: %d", len(attr))
+		case len(attr) == 1:
+			columns = append(columns, attr[0].Columns()...)
+		}
+		if err := rows.Scan(columns...); err != nil {
 			return err
 		}
 		t, ok := s.Table(table)
@@ -171,6 +189,11 @@ func TypedSchemaFKs[T ScanStringer](s *schema.Schema, rows *sql.Rows) error {
 		}
 		if _, ok := fk.RefColumn(rc.Name); !ok {
 			fk.RefColumns = append(fk.RefColumns, rc)
+		}
+		if len(attr) == 1 {
+			if err := attr[0].ScanFunc(fk, columns[origin:]); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -351,6 +374,19 @@ func (b *Builder) TableResource(t *schema.Table, r any) *Builder {
 		return b.mayQualify(t.Schema, t.Name, c.Name)
 	default:
 		panic(fmt.Sprintf("unexpected table resource: %T", r))
+	}
+}
+
+// ViewResource writes the view resource identifier to the builder, prefixed
+// with the schema name if exists.
+func (b *Builder) ViewResource(v *schema.View, r any) *Builder {
+	switch c := r.(type) {
+	case *schema.Column:
+		return b.mayQualify(v.Schema, v.Name, c.Name)
+	case *schema.Index:
+		return b.mayQualify(v.Schema, v.Name, c.Name)
+	default:
+		panic(fmt.Sprintf("unexpected view resource: %T", r))
 	}
 }
 

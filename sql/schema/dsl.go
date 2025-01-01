@@ -57,6 +57,12 @@ func (s *Schema) AddAttrs(attrs ...Attr) *Schema {
 	return s
 }
 
+// SetPos sets the position of the schema.
+func (s *Schema) SetPos(p *Pos) *Schema {
+	ReplaceOrAppend(&s.Attrs, p)
+	return s
+}
+
 // SetRealm sets the database/realm of the schema.
 func (s *Schema) SetRealm(r *Realm) *Schema {
 	s.Realm = r
@@ -252,6 +258,12 @@ func (t *Table) AddAttrs(attrs ...Attr) *Table {
 	return t
 }
 
+// SetPos sets the position of the table.
+func (t *Table) SetPos(p *Pos) *Table {
+	ReplaceOrAppend(&t.Attrs, p)
+	return t
+}
+
 // AddDeps adds the given objects as dependencies to the view.
 func (t *Table) AddDeps(objs ...Object) *Table {
 	t.Deps = append(t.Deps, objs...)
@@ -289,8 +301,8 @@ func removeObj(objs []Object, o Object) []Object {
 	return append(objs[:i:i], objs[i+1:]...)
 }
 
-// sortRefs maintains consistent dependents list.
-func sortRefs(refs []Object) {
+// SortRefs maintains consistent dependents list.
+func SortRefs(refs []Object) {
 	slices.SortFunc(refs, func(a, b Object) int {
 		typeA, typeB := reflect.TypeOf(a), reflect.TypeOf(b)
 		if typeA != typeB {
@@ -316,7 +328,7 @@ func sortRefs(refs []Object) {
 // AddRefs adds references to the table.
 func (t *Table) AddRefs(refs ...Object) {
 	t.Refs = append(t.Refs, refs...)
-	sortRefs(t.Refs)
+	SortRefs(t.Refs)
 }
 
 // RemoveDep removes the given object from the table dependencies.
@@ -360,6 +372,12 @@ func (v *View) AddAttrs(attrs ...Attr) *View {
 	return v
 }
 
+// SetPos sets the position of the view.
+func (v *View) SetPos(p *Pos) *View {
+	ReplaceOrAppend(&v.Attrs, p)
+	return v
+}
+
 // AddDeps adds the given objects as dependencies to the view.
 func (v *View) AddDeps(objs ...Object) *View {
 	v.Deps = append(v.Deps, objs...)
@@ -375,7 +393,7 @@ func (v *View) RemoveDep(o Object) {
 // AddRefs adds references to the view.
 func (v *View) AddRefs(refs ...Object) {
 	v.Refs = append(v.Refs, refs...)
-	sortRefs(v.Refs)
+	SortRefs(v.Refs)
 }
 
 // AddIndexes appends the given indexes to the table index list.
@@ -727,6 +745,22 @@ func (c *Column) AddAttrs(attrs ...Attr) *Column {
 	return c
 }
 
+// SetPos sets the position of the column.
+func (c *Column) SetPos(p *Pos) *Column {
+	ReplaceOrAppend(&c.Attrs, p)
+	return c
+}
+
+// AddIndexes appends the references to the indexes this column is part of.
+func (c *Column) AddIndexes(indexes ...*Index) *Column {
+	for _, idx := range indexes {
+		if !slices.Contains(c.Indexes, idx) {
+			c.Indexes = append(c.Indexes, idx)
+		}
+	}
+	return c
+}
+
 // NewCheck creates a new check.
 func NewCheck() *Check {
 	return &Check{}
@@ -747,6 +781,12 @@ func (c *Check) SetExpr(expr string) *Check {
 // AddAttrs adds additional attributes to the check constraint.
 func (c *Check) AddAttrs(attrs ...Attr) *Check {
 	c.Attrs = append(c.Attrs, attrs...)
+	return c
+}
+
+// SetPos sets the position of the check.
+func (c *Check) SetPos(p *Pos) *Check {
+	ReplaceOrAppend(&c.Attrs, p)
 	return c
 }
 
@@ -794,6 +834,12 @@ func (i *Index) SetComment(v string) *Index {
 // AddAttrs adds additional attributes to the index.
 func (i *Index) AddAttrs(attrs ...Attr) *Index {
 	i.Attrs = append(i.Attrs, attrs...)
+	return i
+}
+
+// SetPos sets the position of the index.
+func (i *Index) SetPos(p *Pos) *Index {
+	ReplaceOrAppend(&i.Attrs, p)
 	return i
 }
 
@@ -855,6 +901,12 @@ func (p *IndexPart) SetDesc(b bool) *IndexPart {
 // AddAttrs adds and additional attributes to the index-part.
 func (p *IndexPart) AddAttrs(attrs ...Attr) *IndexPart {
 	p.Attrs = append(p.Attrs, attrs...)
+	return p
+}
+
+// SetPos sets the position of the index part.
+func (p *IndexPart) SetPos(p1 *Pos) *IndexPart {
+	ReplaceOrAppend(&p.Attrs, p1)
 	return p
 }
 
@@ -926,6 +978,18 @@ func (f *ForeignKey) SetOnDelete(o ReferenceOption) *ForeignKey {
 	return f
 }
 
+// AddAttrs adds additional attributes to the schema.
+func (f *ForeignKey) AddAttrs(attrs ...Attr) *ForeignKey {
+	f.Attrs = append(f.Attrs, attrs...)
+	return f
+}
+
+// SetPos sets the position of the foreign key.
+func (f *ForeignKey) SetPos(p *Pos) *ForeignKey {
+	ReplaceOrAppend(&f.Attrs, p)
+	return f
+}
+
 // AddDeps adds the given objects as dependencies to the function.
 func (f *Func) AddDeps(objs ...Object) *Func {
 	f.Deps = append(f.Deps, objs...)
@@ -941,7 +1005,7 @@ func (f *Func) RemoveDep(o Object) {
 // AddRefs adds references to the function.
 func (f *Func) AddRefs(refs ...Object) {
 	f.Refs = append(f.Refs, refs...)
-	sortRefs(f.Refs)
+	SortRefs(f.Refs)
 }
 
 // AddDeps adds the given objects as dependencies to the procedure.
@@ -959,7 +1023,7 @@ func (p *Proc) RemoveDep(o Object) {
 // AddRefs adds references to the procedure.
 func (p *Proc) AddRefs(refs ...Object) {
 	p.Refs = append(p.Refs, refs...)
-	sortRefs(p.Refs)
+	SortRefs(p.Refs)
 }
 
 // ReplaceOrAppend searches an attribute of the same type as v in
@@ -984,6 +1048,25 @@ func RemoveAttr[T Attr](attrs []Attr) []Attr {
 		}
 	}
 	return f
+}
+
+// NewFilePos creates a file position.
+func NewFilePos(name string) *Pos {
+	return &Pos{
+		Filename: name,
+	}
+}
+
+// SetStart of the position.
+func (p *Pos) SetStart(s struct{ Line, Column, Byte int }) *Pos {
+	p.Start = s
+	return p
+}
+
+// SetEnd of the position.
+func (p *Pos) SetEnd(e struct{ Line, Column, Byte int }) *Pos {
+	p.End = e
+	return p
 }
 
 // del searches an attribute of the same type as v in

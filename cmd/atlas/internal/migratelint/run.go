@@ -162,11 +162,22 @@ func (r *Runner) analyze(ctx context.Context, files []*sqlcheck.File) error {
 			continue
 		}
 		for _, az := range r.Analyzers {
-			err := az.Analyze(ctx, &sqlcheck.Pass{
-				File:     f,
-				Dev:      r.Dev,
-				Reporter: nl.reporterFor(fr, az),
-			})
+			err := func(az sqlcheck.Analyzer) (rerr error) {
+				defer func() {
+					if rc := recover(); rc != nil {
+						var name string
+						if n, ok := az.(sqlcheck.NamedAnalyzer); ok {
+							name = fmt.Sprintf(" (%s)", n.Name())
+						}
+						rerr = fmt.Errorf("skip crashed analyzer %s: %v", name, rc)
+					}
+				}()
+				return az.Analyze(ctx, &sqlcheck.Pass{
+					File:     f,
+					Dev:      r.Dev,
+					Reporter: nl.reporterFor(fr, az),
+				})
+			}(az)
 			// If the last report was skipped,
 			// skip emitting its error.
 			if err != nil && !nl.skipped {
@@ -230,6 +241,20 @@ var (
 		"red":          color.HiRedString,
 		"redBgWhiteFg": color.New(color.FgHiWhite, color.BgHiRed).SprintFunc(),
 		"yellow":       color.YellowString,
+		"colorize": func(cc, text string) string {
+			switch cc {
+			case "cyan":
+				return color.CyanString(text)
+			case "green":
+				return color.HiGreenString(text)
+			case "red":
+				return color.HiRedString(text)
+			case "yellow":
+				return color.YellowString(text)
+			default:
+				return text
+			}
+		},
 	}
 	// DefaultTemplate is the default template used by the CI job.
 	DefaultTemplate = template.Must(template.New("report").
@@ -375,6 +400,12 @@ type (
 		End        time.Time `json:"-"` // End time of the analysis.
 		FromV, ToV string    `json:"-"` // From and to versions.
 		TotalFiles int       `json:"-"` // Total number of files to analyze.
+
+		// A warning to be printed to the terminal, such as a license warning.
+		Warning *struct {
+			Title string
+			Text  string
+		} `json:"-"`
 	}
 
 	// FileChange specifies whether the file was added, deleted or changed.
@@ -386,6 +417,12 @@ type (
 		Text   string      `json:"Text,omitempty"`   // Step description.
 		Error  string      `json:"Error,omitempty"`  // Error that cause the execution to halt.
 		Result *FileReport `json:"Result,omitempty"` // Result of the step. For example, a diagnostic.
+
+		// A warning to be printed to the terminal, such as a license warning.
+		Warning struct {
+			Title string `json:"Title,omitempty"`
+			Text  string `json:"Text,omitempty"`
+		} `json:"-"`
 	}
 
 	// FileReport contains a summary of the analysis of a single file.
@@ -606,8 +643,11 @@ func nolintRules(f *sqlcheck.File) *skipRules {
 		}
 	}
 	for _, c := range f.Changes {
-		for _, d := range c.Stmt.Directive("nolint") {
-			s.pos2rules[c.Stmt.Pos] = append(s.pos2rules[c.Stmt.Pos], strings.Split(d, " ")...)
+		// A list of changes that were loaded in a batch (no statements per change).
+		if c.Stmt != nil {
+			for _, d := range c.Stmt.Directive("nolint") {
+				s.pos2rules[c.Stmt.Pos] = append(s.pos2rules[c.Stmt.Pos], strings.Split(d, " ")...)
+			}
 		}
 	}
 	return s

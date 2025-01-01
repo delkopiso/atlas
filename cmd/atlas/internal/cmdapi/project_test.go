@@ -216,6 +216,24 @@ env "multi" {
 		sources, err := env.Sources()
 		require.NoError(t, err)
 		require.EqualValues(t, []string{"local/app.hcl"}, sources)
+
+		v, err := env.VarFromURL("env://dev")
+		require.NoError(t, err)
+		require.Equal(t, "docker://mysql/8", v)
+		v, err = env.VarFromURL("env://src")
+		require.NoError(t, err)
+		require.Equal(t, "local/app.hcl", v)
+		v, err = env.VarFromURL("env://migration.dir")
+		require.NoError(t, err)
+		require.Equal(t, "file://migrations", v)
+
+		// Multiple sources.
+		env.DefaultExtension.Extra.SetAttr(schemahcl.StringsAttr("src", "local/app.hcl", "local/app.hcl"))
+		sources, err = env.Sources()
+		require.NoError(t, err)
+		require.EqualValues(t, []string{"local/app.hcl", "local/app.hcl"}, sources)
+		_, err = env.VarFromURL("env://src")
+		require.Error(t, err)
 	})
 	t.Run("multi", func(t *testing.T) {
 		_, envs, err := EnvByName(&cobra.Command{}, "multi", nil)

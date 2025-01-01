@@ -513,9 +513,29 @@ func (d *MemDir) Path() string {
 	return d.path
 }
 
+const versionFormat = "20060102150405"
+
 // NewVersion generates a new migration version.
 func NewVersion() string {
-	return time.Now().UTC().Format("20060102150405")
+	return time.Now().UTC().Format(versionFormat)
+}
+
+// CheckVersion checks if the given version is valid Atlas version.
+func CheckVersion(v string) error {
+	if _, err := time.Parse(versionFormat, v); err != nil {
+		return fmt.Errorf("invalid version: %w. Expected format is: %s", err, versionFormat)
+	}
+	return nil
+}
+
+// delim returns a directive with the given delimiter.
+func delim(s string) string {
+	if s == "" {
+		return ""
+	}
+	// Escape delimiters. e.g. "\n" => "\\n".
+	s = strings.NewReplacer("\n", `\n`, "\r", `\r`, "\t", `\t`).Replace(s)
+	return fmt.Sprintf("-- atlas:%s %s", directiveDelimiter, s)
 }
 
 var (
@@ -523,6 +543,7 @@ var (
 	templateFuncs = template.FuncMap{
 		"upper": strings.ToUpper,
 		"now":   NewVersion,
+		"delim": delim,
 	}
 	// DefaultFormatter is a default implementation for Formatter.
 	DefaultFormatter = TemplateFormatter{
@@ -531,7 +552,7 @@ var (
 				"{{ with .Version }}{{ . }}{{ else }}{{ now }}{{ end }}{{ with .Name }}_{{ . }}{{ end }}.sql",
 			)),
 			C: template.Must(template.New("").Funcs(templateFuncs).Parse(
-				`{{ range .Changes }}{{ with .Comment }}{{ printf "-- %s%s\n" (slice . 0 1 | upper ) (slice . 1) }}{{ end }}{{ printf "%s;\n" .Cmd }}{{ end }}`,
+				`{{ with .Delimiter }}{{ delim . | printf "%s\n\n" }}{{ end }}{{ range .Changes }}{{ with .Comment }}{{ printf "-- %s%s\n" (slice . 0 1 | upper ) (slice . 1) }}{{ end }}{{ printf "%s%s\n" .Cmd (or $.Delimiter ";") }}{{ end }}`,
 			)),
 		},
 	}

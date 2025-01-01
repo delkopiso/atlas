@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 
 	"ariga.io/atlas/cmd/atlas/internal/cmdext"
 	"ariga.io/atlas/cmd/atlas/internal/cmdlog"
@@ -40,18 +41,19 @@ func schemaCmd() *cobra.Command {
 }
 
 type schemaApplyFlags struct {
-	url         string   // URL of database to apply the changes on.
-	devURL      string   // URL of the dev database.
-	paths       []string // Paths to HCL files.
-	toURLs      []string // URLs of the desired state.
-	planURL     string   // URL to a pre-planned migration.
-	schemas     []string // Schemas to take into account when diffing.
-	exclude     []string // List of glob patterns used to filter resources from applying (see schema.InspectOptions).
-	dryRun      bool     // Only show SQL on screen instead of applying it.
-	edit        bool     // Open the generated SQL in an editor.
-	autoApprove bool     // Don't prompt for approval before applying SQL.
-	logFormat   string   // Log format.
-	txMode      string   // (none, file)
+	url         string        // URL of database to apply the changes on.
+	devURL      string        // URL of the dev database.
+	paths       []string      // Paths to HCL files.
+	toURLs      []string      // URLs of the desired state.
+	planURL     string        // URL to a pre-planned migration.
+	schemas     []string      // Schemas to take into account when diffing.
+	exclude     []string      // List of glob patterns used to filter resources from applying (see schema.InspectOptions).
+	dryRun      bool          // Only show SQL on screen instead of applying it.
+	edit        bool          // Open the generated SQL in an editor.
+	autoApprove bool          // Don't prompt for approval before applying SQL.
+	logFormat   string        // Log format.
+	txMode      string        // (none, file)
+	lockTimeout time.Duration // Lock timeout.
 }
 
 // check that the flags are valid before running the command.
@@ -60,6 +62,9 @@ func (f *schemaApplyFlags) check(env *Env) error {
 	case f.url == "":
 		return errors.New(`required flag(s) "url" not set`)
 	case len(f.paths) == 0 && len(f.toURLs) == 0:
+		if f.planURL != "" {
+			return errors.New(`the flag "to" is required to verify the provided plan`)
+		}
 		return errors.New(`one of flag(s) "file" or "to" is required`)
 	case f.txMode != txModeNone && f.txMode != txModeFile:
 		return fmt.Errorf("unknown tx-mode %q", f.txMode)
@@ -120,6 +125,7 @@ migration.`,
 	cmd.Flags().StringVarP(&flags.txMode, flagTxMode, "", txModeFile, "set transaction mode [none, file]")
 	cmd.Flags().StringVarP(&flags.planURL, flagPlan, "", "", "URL to a pre-planned migration (e.g., atlas://repo/plans/name)")
 	cmd.Flags().BoolVarP(&flags.edit, flagEdit, "", false, "open the generated SQL in an editor")
+	addFlagLockTimeout(cmd.Flags(), &flags.lockTimeout)
 	// Hidden support for the deprecated -f flag.
 	cmd.Flags().StringSliceVarP(&flags.paths, flagFile, "f", nil, "[paths...] file or directory containing HCL or SQL files")
 	cobra.CheckErr(cmd.Flags().MarkHidden(flagFile))
@@ -166,8 +172,10 @@ func planOptions(c *sqlclient.Client) []migrate.PlanOption {
 }
 
 type schemaCleanFlags struct {
-	URL         string // URL of database to apply the changes on.
-	AutoApprove bool   // Don't prompt for approval before applying SQL.
+	url         string // URL of database to apply the changes on.
+	autoApprove bool   // Don't prompt for approval before applying SQL.
+	logFormat   string // Log format.
+	dryRun      bool   // Only show SQL on screen instead of applying it.
 }
 
 // schemaCleanCmd represents the 'atlas schema clean' subcommand.
@@ -190,15 +198,16 @@ As a safety feature, 'atlas schema clean' will ask for confirmation before attem
 		}
 	)
 	cmd.Flags().SortFlags = false
-	addFlagURL(cmd.Flags(), &flags.URL)
-	addFlagAutoApprove(cmd.Flags(), &flags.AutoApprove)
+	addFlagURL(cmd.Flags(), &flags.url)
+	addFlagDryRun(cmd.Flags(), &flags.dryRun)
+	addFlagFormat(cmd.Flags(), &flags.logFormat)
+	addFlagAutoApprove(cmd.Flags(), &flags.autoApprove)
 	cobra.CheckErr(cmd.MarkFlagRequired(flagURL))
 	return cmd
 }
 
 func schemaCleanRun(cmd *cobra.Command, _ []string, flags schemaCleanFlags) error {
-	// Open a client to the database.
-	c, err := sqlclient.Open(cmd.Context(), flags.URL)
+	c, err := sqlclient.Open(cmd.Context(), flags.url)
 	if err != nil {
 		return err
 	}
@@ -224,10 +233,6 @@ func schemaCleanRun(cmd *cobra.Command, _ []string, flags schemaCleanFlags) erro
 		if err != nil {
 			return err
 		}
-	}
-	if len(drop) == 0 {
-		cmd.Println("Nothing to drop")
-		return nil
 	}
 	return applySchemaClean(cmd, c, drop, flags)
 }
@@ -301,7 +306,7 @@ func schemaDiffRun(cmd *cobra.Command, _ []string, flags schemaDiffFlags, env *E
 	from, err := stateReader(ctx, env, &stateReaderConfig{
 		urls:    flags.fromURL,
 		dev:     c,
-		vars:    GlobalFlags.Vars,
+		vars:    env.Vars(),
 		schemas: flags.schemas,
 		exclude: flags.exclude,
 	})
@@ -312,7 +317,7 @@ func schemaDiffRun(cmd *cobra.Command, _ []string, flags schemaDiffFlags, env *E
 	to, err := stateReader(ctx, env, &stateReaderConfig{
 		urls:    flags.toURL,
 		dev:     c,
-		vars:    GlobalFlags.Vars,
+		vars:    env.Vars(),
 		schemas: flags.schemas,
 		exclude: flags.exclude,
 	})
@@ -379,12 +384,12 @@ flag.
   atlas schema inspect -u "mariadb://user:pass@localhost:3306/" --schema=schemaA,schemaB -s schemaC
   atlas schema inspect --url "postgres://user:pass@host:port/dbname?sslmode=disable"
   atlas schema inspect -u "sqlite://file:ex1.db?_fk=1"`,
-			PreRunE: func(cmd *cobra.Command, args []string) (err error) {
+			PreRunE: RunE(func(cmd *cobra.Command, args []string) (err error) {
 				if env, err = selectEnv(cmd); err != nil {
 					return err
 				}
 				return setSchemaEnvFlags(cmd, env)
-			},
+			}),
 			RunE: RunE(func(cmd *cobra.Command, args []string) error {
 				return schemaInspectRun(cmd, args, flags, env)
 			}),
@@ -420,7 +425,7 @@ func schemaInspectRun(cmd *cobra.Command, _ []string, flags schemaInspectFlags, 
 	r, err := stateReader(ctx, env, &stateReaderConfig{
 		urls:    []string{flags.url},
 		dev:     dev,
-		vars:    GlobalFlags.Vars,
+		vars:    env.Vars(),
 		schemas: flags.schemas,
 		exclude: flags.exclude,
 	})
@@ -527,9 +532,6 @@ func schemaFlagsFromConfig(cmd *cobra.Command) error {
 }
 
 func setSchemaEnvFlags(cmd *cobra.Command, env *Env) error {
-	if err := inputValuesFromEnv(cmd, env); err != nil {
-		return err
-	}
 	if err := maySetFlag(cmd, flagDevURL, env.DevURL); err != nil {
 		return err
 	}
@@ -552,6 +554,9 @@ func setSchemaEnvFlags(cmd *cobra.Command, env *Env) error {
 		if err := maySetFlag(cmd, flagURL, env.URL); err != nil {
 			return err
 		}
+		if err := maySetFlag(cmd, flagFormat, env.Format.Schema.Clean); err != nil {
+			return err
+		}
 	case "inspect":
 		if err := maySetFlag(cmd, flagURL, env.URL); err != nil {
 			return err
@@ -572,6 +577,9 @@ func setSchemaEnvFlags(cmd *cobra.Command, env *Env) error {
 		}
 	case "push":
 		if err := maySetFlag(cmd, flagURL, strings.Join(srcs, ",")); err != nil {
+			return err
+		}
+		if err := maySetFlag(cmd, flagFormat, env.Format.Schema.Push); err != nil {
 			return err
 		}
 	case "test":

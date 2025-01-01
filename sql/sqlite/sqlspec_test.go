@@ -177,6 +177,10 @@ table "accounts" {
 			{SeqNo: 0, C: exp.Tables[1].Columns[0]},
 		},
 	}
+	exp.Tables[0].Columns[0].AddIndexes(exp.Tables[0].PrimaryKey)
+	exp.Tables[0].Columns[0].AddIndexes(exp.Tables[0].Indexes[0])
+	exp.Tables[0].Columns[1].AddIndexes(exp.Tables[0].Indexes[0])
+	exp.Tables[1].Columns[0].AddIndexes(exp.Tables[1].PrimaryKey)
 	var s schema.Schema
 	err := EvalHCLBytes([]byte(f), &s, nil)
 	require.NoError(t, err)
@@ -259,7 +263,7 @@ func TestMarshalSpec_AutoIncrement(t *testing.T) {
 		},
 	}
 	s.Tables[0].Schema = s
-	buf, err := MarshalSpec(s, hclState)
+	buf, err := MarshalHCL(s)
 	require.NoError(t, err)
 	const expected = `table "users" {
   schema = schema.test
@@ -308,7 +312,7 @@ func TestMarshalSpec_IndexPredicate(t *testing.T) {
 			},
 		},
 	}
-	buf, err := MarshalSpec(s, hclState)
+	buf, err := MarshalHCL(s)
 	require.NoError(t, err)
 	const expected = `table "users" {
   schema = schema.test
@@ -344,7 +348,7 @@ func TestTypes(t *testing.T) {
 		},
 		{
 			typeExpr: `sql("custom")`,
-			expected: &schema.UnsupportedType{T: "custom"},
+			expected: &UserDefinedType{T: "custom"},
 		},
 		{
 			typeExpr: "tinyint(10)",
@@ -479,7 +483,7 @@ schema "test" {
 			require.NoError(t, err)
 			colspec := test.Tables[0].Columns[0]
 			require.EqualValues(t, tt.expected, colspec.Type.Type)
-			spec, err := MarshalSpec(&test, hclState)
+			spec, err := MarshalHCL(&test)
 			require.NoError(t, err)
 			var after schema.Schema
 			err = EvalHCLBytes(spec, &after, nil)
@@ -502,7 +506,7 @@ func TestMarshalSpec_TableOptions(t *testing.T) {
 				),
 		)
 	s.Tables[0].SetSchema(s)
-	buf, err := MarshalSpec(s, hclState)
+	buf, err := MarshalHCL(s)
 	require.NoError(t, err)
 	const expected = `table "users" {
   schema = schema.test

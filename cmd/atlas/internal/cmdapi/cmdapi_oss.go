@@ -16,7 +16,7 @@ import (
 	"text/template"
 	"time"
 
-	"ariga.io/atlas/cmd/atlas/internal/cloudapi"
+	"ariga.io/atlas/cmd/atlas/internal/cmdext"
 	"ariga.io/atlas/cmd/atlas/internal/cmdlog"
 	"ariga.io/atlas/cmd/atlas/internal/cmdstate"
 	cmdmigrate "ariga.io/atlas/cmd/atlas/internal/migrate"
@@ -39,6 +39,8 @@ func init() {
 		schemaFmtCmd(),
 		schemaInspectCmd(),
 		unsupportedCommand("schema", "test"),
+		unsupportedCommand("schema", "plan"),
+		unsupportedCommand("schema", "push"),
 	)
 	Root.AddCommand(schemaCmd)
 	migrateCmd := migrateCmd()
@@ -218,14 +220,12 @@ func migrateDiffRun(cmd *cobra.Command, args []string, flags migrateDiffFlags, e
 	}
 	defer dev.Close()
 	// Acquire a lock.
-	if l, ok := dev.Driver.(schema.Locker); ok {
-		unlock, err := l.Lock(ctx, "atlas_migrate_diff", flags.lockTimeout)
-		if err != nil {
-			return fmt.Errorf("acquiring database lock: %w", err)
-		}
-		// If unlocking fails notify the user about it.
-		defer func() { cobra.CheckErr(unlock()) }()
+	unlock, err := dev.Lock(ctx, "atlas_migrate_diff", flags.lockTimeout)
+	if err != nil {
+		return fmt.Errorf("acquiring database lock: %w", err)
 	}
+	// If unlocking fails notify the user about it.
+	defer func() { cobra.CheckErr(unlock()) }()
 	// Open the migration directory.
 	u, err := url.Parse(flags.dirURL)
 	if err != nil {
@@ -249,14 +249,27 @@ func migrateDiffRun(cmd *cobra.Command, args []string, flags migrateDiffFlags, e
 	if f, indent, err = mayIndent(u, f, flags.format); err != nil {
 		return err
 	}
-	diffOpts := append(diffOptions(cmd, env), schema.DiffNormalized())
+	diffOpts := diffOptions(cmd, env)
+	// If there is a state-loader that requires a custom
+	// 'migrate diff' handling, offload it the work.
+	if d, ok := cmdext.States.Differ(flags.desiredURLs); ok {
+		err := d.MigrateDiff(ctx, &cmdext.MigrateDiffOptions{
+			To:      flags.desiredURLs,
+			Name:    name,
+			Indent:  indent,
+			Dir:     dir,
+			Dev:     dev,
+			Options: diffOpts,
+		})
+		return maskNoPlan(cmd, err)
+	}
 	// Get a state reader for the desired state.
 	desired, err := stateReader(ctx, env, &stateReaderConfig{
 		urls:    flags.desiredURLs,
 		dev:     dev,
 		client:  dev,
 		schemas: flags.schemas,
-		vars:    GlobalFlags.Vars,
+		vars:    env.Vars(),
 	})
 	if err != nil {
 		return err
@@ -361,7 +374,7 @@ func schemaApplyRun(cmd *cobra.Command, flags schemaApplyFlags, env *Env) error 
 		client:  client,
 		schemas: flags.schemas,
 		exclude: flags.exclude,
-		vars:    GlobalFlags.Vars,
+		vars:    env.Vars(),
 	})
 	if err != nil {
 		return err
@@ -413,10 +426,20 @@ func schemaApplyRun(cmd *cobra.Command, flags schemaApplyFlags, env *Env) error 
 
 // applySchemaClean is the community-version of the 'atlas schema clean' handler.
 func applySchemaClean(cmd *cobra.Command, client *sqlclient.Client, drop []schema.Change, flags schemaCleanFlags) error {
+	if flags.dryRun {
+		return AbortErrorf(unsupportedMessage("schema", "clean --dry-run"))
+	}
+	if flags.logFormat != "" {
+		return AbortErrorf(unsupportedMessage("schema", "clean --format"))
+	}
+	if len(drop) == 0 {
+		cmd.Println("Nothing to drop")
+		return nil
+	}
 	if err := summary(cmd, client, drop, cmdlog.SchemaPlanTemplate); err != nil {
 		return err
 	}
-	if flags.AutoApprove || promptUser(cmd) {
+	if flags.autoApprove || promptUser(cmd) {
 		if err := client.ApplyChanges(cmd.Context(), drop); err != nil {
 			return err
 		}
@@ -442,9 +465,8 @@ func promptApply(cmd *cobra.Command, flags schemaApplyFlags, diff *diff, client,
 	return nil
 }
 
-// withTokenContext allows attaching token to the context.
-func withTokenContext(ctx context.Context, _ string, _ *cloudapi.Client) (context.Context, error) {
-	return ctx, nil // unimplemented.
+func maySetLoginContext(*cobra.Command, *Project) error {
+	return nil
 }
 
 func setEnvs(context.Context, []*Env) {}
@@ -454,7 +476,7 @@ var specOptions []schemahcl.Option
 
 // diffOptions returns environment-aware diff options.
 func diffOptions(_ *cobra.Command, env *Env) []schema.DiffOption {
-	return env.DiffOptions()
+	return append(env.DiffOptions(), schema.DiffNormalized())
 }
 
 // openClient allows opening environment-aware clients.
