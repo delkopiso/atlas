@@ -16,7 +16,6 @@ import (
 	"text/template"
 	"time"
 
-	"ariga.io/atlas/cmd/atlas/internal/cmdext"
 	"ariga.io/atlas/cmd/atlas/internal/cmdlog"
 	"ariga.io/atlas/cmd/atlas/internal/cmdstate"
 	cmdmigrate "ariga.io/atlas/cmd/atlas/internal/migrate"
@@ -250,19 +249,6 @@ func migrateDiffRun(cmd *cobra.Command, args []string, flags migrateDiffFlags, e
 		return err
 	}
 	diffOpts := diffOptions(cmd, env)
-	// If there is a state-loader that requires a custom
-	// 'migrate diff' handling, offload it the work.
-	if d, ok := cmdext.States.Differ(flags.desiredURLs); ok {
-		err := d.MigrateDiff(ctx, &cmdext.MigrateDiffOptions{
-			To:      flags.desiredURLs,
-			Name:    name,
-			Indent:  indent,
-			Dir:     dir,
-			Dev:     dev,
-			Options: diffOpts,
-		})
-		return maskNoPlan(cmd, err)
-	}
 	// Get a state reader for the desired state.
 	desired, err := stateReader(ctx, env, &stateReaderConfig{
 		urls:    flags.desiredURLs,

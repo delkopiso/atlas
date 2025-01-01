@@ -177,26 +177,6 @@ func TestMakeFileFunc(t *testing.T) {
 	require.Equal(t, "person \"rotemtam\" {\n  hobby = var.hobby\n}", v.AsString())
 }
 
-func TestMakeGlobFunc(t *testing.T) {
-	fn := MakeGlobFunc("testdata")
-	_, err := fn.Call([]cty.Value{cty.StringVal("foo")})
-	require.EqualError(t, err, "base directory must be an absolute path. got: testdata")
-
-	base, err := filepath.Abs("testdata")
-	require.NoError(t, err)
-	fn = MakeGlobFunc(base)
-	v, err := fn.Call([]cty.Value{cty.StringVal("*.hcl")})
-	require.NoError(t, err)
-
-	var result []string
-	for _, f := range v.AsValueSlice() {
-		p, err := filepath.Rel(base, f.AsString())
-		require.NoError(t, err)
-		result = append(result, p)
-	}
-	require.Equal(t, []string{"a.hcl", "b.hcl", "variables.hcl"}, result)
-}
-
 func TestMakeFilesetFunc(t *testing.T) {
 	base, err := filepath.Abs("testdata")
 	require.NoError(t, err)
